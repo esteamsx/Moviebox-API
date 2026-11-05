@@ -7,11 +7,12 @@ License: MIT
 import os
 import sqlite3
 import asyncio
+import hmac
 from contextlib import asynccontextmanager
 import httpx
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import state
@@ -21,7 +22,7 @@ import catalog_worker
 import self_ping
 from config import (
     API_VERSION, PORT, REQUEST_TIMEOUT, CATALOG_DB, STATIC_DIR,
-    SELF_URL, SELF_PING_INTERVAL,
+    SELF_URL, SELF_PING_INTERVAL, SITE_ORIGIN, API_ACCESS_KEY,
 )
 from dashboard import DASHBOARD_HTML
 from routes import router
@@ -99,10 +100,32 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[SITE_ORIGIN],
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "Range"],
+    expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
 )
+
+@app.middleware("http")
+async def restrict_api_access(request: Request, call_next):
+    """Allow API use from the Stream site only; a shared key strengthens server calls."""
+    path = request.url.path
+    public_paths = {"/", "/app", "/health", "/docs", "/redoc", "/openapi.json", "/manifest.json", "/sw.js"}
+    if path in public_paths or path.startswith("/static/"):
+        return await call_next(request)
+
+    if request.headers.get("origin") != SITE_ORIGIN:
+        return JSONResponse({"detail": "This API is restricted to the ES Teams TV site."}, status_code=403)
+
+    if not API_ACCESS_KEY:
+        return JSONResponse({"detail": "API_ACCESS_KEY must be configured before the API can be used."}, status_code=503)
+
+    if request.method != "OPTIONS":
+        authorization = request.headers.get("authorization", "")
+        supplied_key = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        if not supplied_key or not hmac.compare_digest(supplied_key, API_ACCESS_KEY):
+            return JSONResponse({"detail": "Invalid API credentials."}, status_code=401)
+    return await call_next(request)
 
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
