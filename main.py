@@ -18,8 +18,10 @@ import state
 import storage
 import providers
 import catalog_worker
+import self_ping
 from config import (
     API_VERSION, PORT, REQUEST_TIMEOUT, CATALOG_DB, STATIC_DIR,
+    SELF_URL, SELF_PING_INTERVAL,
 )
 from dashboard import DASHBOARD_HTML
 from routes import router
@@ -57,10 +59,15 @@ async def lifespan(app: FastAPI):
 
     state.background_task = asyncio.create_task(catalog_worker.maintenance_loop())
     state.probe_task = asyncio.create_task(providers.probe_loop())
+    self_ping_task = None
+    if SELF_URL:
+        self_ping_task = asyncio.create_task(
+            self_ping.keep_alive(state.client, SELF_URL, SELF_PING_INTERVAL)
+        )
     try:
         yield
     finally:
-        for t in (state.background_task, state.probe_task):
+        for t in (state.background_task, state.probe_task, self_ping_task):
             if t is not None:
                 t.cancel()
                 try:

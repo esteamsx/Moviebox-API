@@ -70,6 +70,16 @@ Custom port:
 PORT=9000 python main.py
 ```
 
+Optional Render keep-alive:
+
+If your hosting plan suspends idle instances, set `SELF_URL` in the service
+environment to the public URL of this deployment, for example
+`https://your-moviebox-api.onrender.com`. The app will request
+`SELF_URL/health` every 10 minutes. You can change the interval with
+`SELF_PING_INTERVAL` in seconds (minimum 60). Leave `SELF_URL` empty or unset
+to disable the worker. Whether self-pinging prevents suspension depends on
+the hosting provider's free-plan policy.
+
 Docker:
 
 ```bash
