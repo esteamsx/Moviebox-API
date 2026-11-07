@@ -16,7 +16,7 @@ REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "25"))
 SITE_ORIGIN = "https://esteamstv.devs.surf"
 API_ACCESS_KEY = os.environ.get("API_ACCESS_KEY", "").strip()
 SELF_URL = os.environ.get("SELF_URL", "").strip()
-SELF_PING_INTERVAL = max(60, int(os.environ.get("SELF_PING_INTERVAL", "600")))
+SELF_PING_INTERVAL = max(30, int(os.environ.get("SELF_PING_INTERVAL", "60")))
 DOMAIN_TTL = int(os.environ.get("DOMAIN_TTL", "300"))
 
 TAB_MOVIES = int(os.environ.get("TAB_MOVIES", "2"))

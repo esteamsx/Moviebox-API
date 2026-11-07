@@ -28,10 +28,10 @@ async def keep_alive(client: httpx.AsyncClient, self_url: str, interval: int) ->
         logger.warning("SELF_URL is set but is not a valid http(s) URL; self-ping disabled")
         return
 
-    logger.info("Self-ping enabled: %s every %ss", target, interval)
+    interval = max(30, int(interval))
+    logger.info("Self-ping enabled: %s immediately, then every %ss", target, interval)
     try:
         while True:
-            await asyncio.sleep(interval)
             try:
                 response = await client.get(
                     target,
@@ -46,6 +46,7 @@ async def keep_alive(client: httpx.AsyncClient, self_url: str, interval: int) ->
                 raise
             except Exception as exc:
                 logger.warning("Self-ping failed: %s", exc)
+            await asyncio.sleep(interval)
     except asyncio.CancelledError:
         logger.debug("Self-ping stopped")
         raise
