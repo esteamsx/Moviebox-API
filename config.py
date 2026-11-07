@@ -9,15 +9,21 @@ from env_loader import load_environment
 
 load_environment()
 
-API_VERSION = "2.9.0"
+API_VERSION = "2.9.1"
 
 PORT = int(os.environ.get("PORT", "8000"))
+BIND_HOST = os.environ.get("MOVIEBOX_BIND_HOST", "0.0.0.0")
 REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "25"))
 SITE_ORIGIN = "https://esteamstv.devs.surf"
 API_ACCESS_KEY = os.environ.get("API_ACCESS_KEY", "").strip()
 SELF_URL = os.environ.get("SELF_URL", "").strip()
 SELF_PING_INTERVAL = max(30, int(os.environ.get("SELF_PING_INTERVAL", "60")))
 DOMAIN_TTL = int(os.environ.get("DOMAIN_TTL", "300"))
+CORS_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("CORS_ORIGINS", "").split(",")
+    if origin.strip() and origin.strip() != "*"
+]
 
 TAB_MOVIES = int(os.environ.get("TAB_MOVIES", "2"))
 TAB_TV = int(os.environ.get("TAB_TV", "5"))

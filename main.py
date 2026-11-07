@@ -3,7 +3,6 @@ MovieBox API Pro — https://github.com/faisaljs/Moviebox-API
 Author: Faisal (https://github.com/faisaljs)
 License: MIT
 """
-
 import os
 import sqlite3
 import asyncio
@@ -21,7 +20,7 @@ import providers
 import catalog_worker
 import self_ping
 from config import (
-    API_VERSION, PORT, REQUEST_TIMEOUT, CATALOG_DB, STATIC_DIR,
+    API_VERSION, PORT, BIND_HOST, CORS_ORIGINS, REQUEST_TIMEOUT, CATALOG_DB, STATIC_DIR,
     SELF_URL, SELF_PING_INTERVAL, SITE_ORIGIN, API_ACCESS_KEY,
 )
 from dashboard import DASHBOARD_HTML
@@ -68,11 +67,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        for t in (state.background_task, state.probe_task, self_ping_task):
-            if t is not None:
-                t.cancel()
+        for task in (state.background_task, state.probe_task, self_ping_task):
+            if task is not None:
+                task.cancel()
                 try:
-                    await t
+                    await task
                 except asyncio.CancelledError:
                     pass
         if state.client is not None:
@@ -87,10 +86,7 @@ app = FastAPI(
     title="MovieBox API Pro",
     description="Full Pure REST API for moviebox.ph — Zero Scraping",
     version=API_VERSION,
-    contact={
-        "name": "Faisal",
-        "url": "https://github.com/faisaljs",
-    },
+    contact={"name": "Faisal", "url": "https://github.com/faisaljs"},
     license_info={
         "name": "MIT",
         "url": "https://github.com/faisaljs/Moviebox-API/blob/main/LICENSE",
@@ -98,17 +94,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[SITE_ORIGIN],
-    allow_methods=["*"],
-    allow_headers=["Authorization", "Content-Type", "Range"],
-    expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
-)
+
+@app.middleware("http")
+async def reject_cross_origin_mutations(request: Request, call_next):
+    # Reject browser mutations from untrusted origins in addition to the API's
+    # strict configured-site and server-key access gate below.
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        if origin:
+            scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+            same_origin = f"{scheme}://{request.headers.get('host', request.url.netloc)}"
+            if origin.rstrip("/") not in {same_origin.rstrip("/"), SITE_ORIGIN, *CORS_ORIGINS}:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Cross-origin mutations are not allowed"},
+                )
+    return await call_next(request)
+
 
 @app.middleware("http")
 async def restrict_api_access(request: Request, call_next):
-    """Allow API use from the Stream site only; a shared key strengthens server calls."""
+    """Allow API use from the configured site only; a shared key protects server calls."""
     path = request.url.path
     public_paths = {"/", "/app", "/health", "/docs", "/redoc", "/openapi.json", "/manifest.json", "/sw.js"}
     if path in public_paths or path.startswith("/static/"):
@@ -116,16 +122,23 @@ async def restrict_api_access(request: Request, call_next):
 
     if request.headers.get("origin") != SITE_ORIGIN:
         return JSONResponse({"detail": "This API is restricted to the ES Teams TV site."}, status_code=403)
-
     if not API_ACCESS_KEY:
         return JSONResponse({"detail": "API_ACCESS_KEY must be configured before the API can be used."}, status_code=503)
-
     if request.method != "OPTIONS":
         authorization = request.headers.get("authorization", "")
         supplied_key = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
         if not supplied_key or not hmac.compare_digest(supplied_key, API_ACCESS_KEY):
             return JSONResponse({"detail": "Invalid API credentials."}, status_code=401)
     return await call_next(request)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(dict.fromkeys([SITE_ORIGIN, *CORS_ORIGINS])),
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type", "Range"],
+    expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
+)
 
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -173,4 +186,4 @@ async def frontend_app():
 if __name__ == "__main__":
     import uvicorn
     reload_flag = os.environ.get("RELOAD", "0") == "1"
-    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=reload_flag)
+    uvicorn.run("main:app", host=BIND_HOST, port=PORT, reload=reload_flag)
