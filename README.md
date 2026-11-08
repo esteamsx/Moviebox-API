@@ -569,6 +569,7 @@ See `.env.example` for the full list with defaults. Key variables:
 | `RELOAD`                        | `0`           | `1` enables autoreload (dev)                      |
 | `REQUEST_TIMEOUT`               | `25`          | Upstream timeout, seconds                         |
 | `MOVIEBOX_BIND_HOST`            | `0.0.0.0`     | Bind address; required for Render web services |
+| `MOVIEBOX_SITE_ORIGIN`          | ES Teams URL  | Optional browser origin used for CORS and mutation checks |
 | `CORS_ORIGINS`                  | empty         | Optional comma-separated trusted origins allowed for browser cross-origin API calls |
 | `API_ACCESS_KEY`                | required      | Shared bearer secret; set the same value as `MOVIEBOX_API_KEY` in Stream |
 | `CATALOG_DB`                    | `catalog.db`  | SQLite path; the CLI stores this default under its per-user data directory |
@@ -589,8 +590,8 @@ passes `.env` into the container.
 
 ## Deployment notes
 
-- **Network exposure** — Render must bind to `0.0.0.0`. Protected API routes require the configured site Origin and `API_ACCESS_KEY`; public health/dashboard/documentation routes remain available for service monitoring and diagnostics.
-- **CORS** — same-origin frontend use needs no CORS setting. `CORS_ORIGINS` can add selected browser origins, while API access still requires the site/key checks.
+- **Network exposure** — Render must bind to `0.0.0.0`. Protected API routes require `API_ACCESS_KEY`; public health/dashboard/documentation routes remain available for service monitoring and diagnostics.
+- **CORS** — same-origin frontend use needs no CORS setting. `MOVIEBOX_SITE_ORIGIN` and `CORS_ORIGINS` control browser-origin checks, while server-to-server API calls use the shared key and do not need an `Origin` header.
 - **Behind a reverse proxy** — forward the full path. Routes assume `/` as root.
 - **Healthcheck** — point your orchestrator at `/health`.
 - **Persist `catalog.db`** — mount it as a volume or the walk restarts on every container rebuild. The compose file already bind-mounts it.

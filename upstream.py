@@ -39,14 +39,19 @@ def _add_host_param(path: str, host: str) -> str:
 
 async def _fetch_token(host: str) -> str:
     """Hit /home once, harvest token from x-user header or set-cookie."""
-    client = state.require_client()
     try:
-        resp = await client.get(
-            f"{API_BASE}/home?host={host}",
-            headers=DEFAULT_HEADERS,
-            timeout=PROVIDER_PROBE_TIMEOUT,
-        )
+        async with httpx.AsyncClient(timeout=PROVIDER_PROBE_TIMEOUT) as client:
+            resp = await client.get(
+                f"{API_BASE}/home?host={host}",
+                headers={
+                    "User-Agent": DEFAULT_HEADERS["User-Agent"],
+                    "Referer": DEFAULT_HEADERS["Referer"],
+                },
+            )
     except Exception:
+        return ""
+
+    if resp.status_code != 200:
         return ""
 
     x_user = resp.headers.get("x-user")
@@ -110,6 +115,7 @@ async def _attempt(
     host: str, path: str, method: str, payload: dict | None,
 ) -> tuple[dict, float]:
     """Single provider attempt. Raises _ProviderError on any failure."""
+    state.require_client().cookies.clear()
     token = await get_bearer_token(host)
     headers = {**DEFAULT_HEADERS}
     if token:
@@ -121,8 +127,17 @@ async def _attempt(
     if (rotated := _capture_rotated_token(host, resp)):
         headers["Authorization"] = f"Bearer {rotated}"
 
-    if resp.status_code == 401:
+    is_auth_fail = resp.status_code == 401
+    if not is_auth_fail and resp.status_code == 400:
+        try:
+            body = resp.json()
+            is_auth_fail = isinstance(body, dict) and "invalid token" in (body.get("message") or "").lower()
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    if is_auth_fail:
         state.bearer_tokens.pop(host, None)
+        state.require_client().cookies.clear()
         token = await get_bearer_token(host)
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -202,12 +217,21 @@ async def _play_attempt(domain: str, subject_id: str, detail_path: str, se: int,
     client = state.require_client()
     referer = build_player_referer(domain, detail_path, subject_id, se, ep)
     url = (
-        f"{domain}/wefeed-h5api-bff/subject/play"
+        f"{API_BASE}/subject/play"
         f"?subjectId={subject_id}&se={se}&ep={ep}&detailPath={detail_path}"
+        f"&host={DEFAULT_HOST}"
     )
-    resp = await client.get(url, headers={**PLAYER_HEADERS, "Referer": referer})
+    token = await get_bearer_token(DEFAULT_HOST)
+    headers = {
+        "User-Agent": PLAYER_HEADERS["User-Agent"],
+        "Referer": referer,
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    resp = await client.get(url, headers=headers)
     if resp.status_code != 200:
         raise HTTPException(502, f"player HTTP {resp.status_code}")
+    _capture_rotated_token(DEFAULT_HOST, resp)
     try:
         data = resp.json().get("data", {}) or {}
     except Exception:

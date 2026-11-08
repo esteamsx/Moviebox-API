@@ -97,8 +97,8 @@ app = FastAPI(
 
 @app.middleware("http")
 async def reject_cross_origin_mutations(request: Request, call_next):
-    # Reject browser mutations from untrusted origins in addition to the API's
-    # strict configured-site and server-key access gate below.
+    # Reject browser mutations from untrusted origins while private routes below
+    # remain protected by the shared server key.
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         origin = request.headers.get("origin")
         if origin:
@@ -114,14 +114,12 @@ async def reject_cross_origin_mutations(request: Request, call_next):
 
 @app.middleware("http")
 async def restrict_api_access(request: Request, call_next):
-    """Allow API use from the configured site only; a shared key protects server calls."""
+    """Protect private API routes with the shared key without relying on a brittle browser origin."""
     path = request.url.path
     public_paths = {"/", "/app", "/health", "/docs", "/redoc", "/openapi.json", "/manifest.json", "/sw.js"}
     if path in public_paths or path.startswith("/static/"):
         return await call_next(request)
 
-    if request.headers.get("origin") != SITE_ORIGIN:
-        return JSONResponse({"detail": "This API is restricted to the ES Teams TV site."}, status_code=403)
     if not API_ACCESS_KEY:
         return JSONResponse({"detail": "API_ACCESS_KEY must be configured before the API can be used."}, status_code=503)
     if request.method != "OPTIONS":
